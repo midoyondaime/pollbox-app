@@ -1,28 +1,60 @@
 # OVERVIEW
 # GitLab CI pipeline for pollbox-app.
-# One stage with one job: install the API dependencies and run the tests.
-# The job requires the tag "vm-docker", so only my VM runner can take it
-# (GitLab's shared runners don't have this tag).
-# Later we add a build stage that builds and pushes the Docker image.
+# Stage 1 "test": install the API dependencies and run pytest.
+# Stage 2 "build": build the API Docker image and push it to Docker Hub,
+# tagged with the commit SHA. It runs only if the test stage is green.
+# Both jobs require the tag "vm-docker", so only my VM runner takes them.
 
-# The ordered list of stages. Jobs in a stage run only if the previous stage succeeded.
+# The ordered list of stages; a stage runs only if the previous one succeeded.
 stages:
-  # The only stage for now.
+  # First: tests.
   - test
+  # Second: build and push the image.
+  - build
 
-# A job named "test".
+# Job "test".
 test:
-  # Put this job in the "test" stage.
+  # Belongs to the test stage.
   stage: test
-  # The container image the job runs in.
+  # Container the job runs in.
   image: python:3.12-slim
-  # Only a runner carrying this tag may run the job.
+  # Only a runner with this tag may take the job.
   tags:
-    # The tag we added to the VM runner on the website.
     - vm-docker
-  # The commands to run, in order; the first one that fails makes the job red.
+  # Commands, run in order.
   script:
-    # Install the same dependencies as locally.
+    # Install the dependencies.
     - pip install -r api/requirements.txt
     # Run the tests.
     - pytest -q
+
+# Job "build".
+build:
+  # Belongs to the build stage.
+  stage: build
+  # Container that provides the "docker" command (client only).
+  image: docker:latest
+  # A second container next to the job: the Docker engine (dind = Docker in Docker).
+  services:
+    - docker:dind
+  # Only my VM runner may take the job.
+  tags:
+    - vm-docker
+  # Variables for this job.
+  variables:
+    # Where the docker command finds the engine: the service named "docker".
+    DOCKER_HOST: tcp://docker:2375
+    # Turn TLS off between the two containers (they share a private network).
+    DOCKER_TLS_CERTDIR: ""
+  # Publish only for the main branch.
+  rules:
+    # Run when the branch is main.
+    - if: $CI_COMMIT_BRANCH == "main"
+  # Commands, run in order.
+  script:
+    # Log in to Docker Hub; the token is read from stdin so it never shows in the command line.
+    - echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+    # Build the image from the api/ folder, tagged with the full commit SHA.
+    - docker build -t "$DOCKERHUB_USERNAME/pollbox-api:$CI_COMMIT_SHA" api
+    # Push the image to Docker Hub.
+    - docker push "$DOCKERHUB_USERNAME/pollbox-api:$CI_COMMIT_SHA"
