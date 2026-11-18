@@ -15,4 +15,4 @@ app = FastAPI()
 # Define the handler. It takes no input.
 def health():
     # Return a dictionary; FastAPI turns it into JSON: {"status": "ok"}.
-    return {"status_of_the_app": "Mehdi is ok"}
+    return {"status": "ok"}
