@@ -1,0 +1,37 @@
+# OVERVIEW
+# CI pipeline for pollbox-app.
+# For now it has one job: install the API dependencies and run the tests.
+# Later we add jobs that build and push the Docker images.
+
+# The name shown in the GitHub "Actions" tab.
+name: CI
+
+# Events that start this workflow.
+on:
+  # Run on every push...
+  push:
+    # ...but only to the main branch.
+    branches: [main]
+  # Also run on every pull request (so a PR shows green or red before merging).
+  pull_request:
+
+# The list of jobs in this workflow.
+jobs:
+  # A job named "test".
+  test:
+    # Run it on a fresh GitHub-hosted Ubuntu machine.
+    runs-on: ubuntu-latest
+    # The ordered steps of the job.
+    steps:
+      # Step 1: download the repo's code onto the runner (it starts empty).
+      - uses: actions/checkout@v6
+      # Step 2: install Python on the runner.
+      - uses: actions/setup-python@v6
+        # Settings passed to this action.
+        with:
+          # Same Python as in your VM (Ubuntu 24.04 ships 3.12; recalled, not checked).
+          python-version: "3.12"
+      # Step 3: install the same dependencies as locally.
+      - run: pip install -r api/requirements.txt
+      # Step 4: run the tests; a failing test makes the job (and the pipeline) red.
+      - run: pytest -q
