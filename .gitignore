@@ -1,0 +1,8 @@
+# Local Python virtual environment: rebuilt from requirements.txt, never committed.
+.venv/
+# Python's compiled cache files.
+__pycache__/
+# Test cache created by pytest.
+.pytest_cache/
+# Local environment files, which can hold passwords.
+.env
