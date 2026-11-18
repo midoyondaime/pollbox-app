@@ -1,0 +1,22 @@
+# OVERVIEW
+# GitLab CI pipeline for pollbox-app.
+# For now it has one stage with one job: install the API dependencies and run the tests.
+# Later we add a build stage that builds and pushes the Docker image.
+
+# The ordered list of stages. Jobs in a stage run only if the previous stage succeeded.
+stages:
+  # The only stage for now.
+  - test
+
+# A job named "test" (the name is free; the stage line below puts it in a stage).
+test:
+  # Put this job in the "test" stage.
+  stage: test
+  # The container image the job runs in (like GitHub's runs-on + setup-python in one line).
+  image: python:3.12-slim
+  # The commands to run, in order; the first one that fails makes the job red.
+  script:
+    # Install the same dependencies as locally.
+    - pip install -r api/requirements.txt
+    # Run the tests.
+    - pytest -q
