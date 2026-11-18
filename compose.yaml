@@ -1,0 +1,40 @@
+# OVERVIEW
+# Local development stack for pollbox. For now only Postgres.
+# Later we add redis, the worker, the api and the frontend.
+# The password is read from the .env file (never committed).
+
+# Each entry under "services" is one container.
+services:
+  # The database service; "db" is also its hostname for the other containers.
+  db:
+    # Official Postgres image, pinned to major version 16 (same as in the Kubernetes notes).
+    image: postgres:16
+    # Variables read by the image on the FIRST start, when the data folder is empty.
+    environment:
+      # The database user to create.
+      POSTGRES_USER: pollbox
+      # The database to create.
+      POSTGRES_DB: pollbox
+      # The password, taken from the .env file next to this file.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Publish the port, but only on the VM's loopback address (not reachable from the network).
+    ports:
+      - "127.0.0.1:5432:5432"
+    # Keep the data between restarts.
+    volumes:
+      # Named volume "pgdata" mounted where Postgres stores its files.
+      - pgdata:/var/lib/postgresql/data
+    # Docker asks "is Postgres really ready?" instead of only "is the process up?".
+    healthcheck:
+      # Exit 0 once Postgres accepts connections for this user and database.
+      test: ["CMD-SHELL", "pg_isready -U pollbox -d pollbox"]
+      # Check every 5 seconds.
+      interval: 5s
+      # A check taking longer than this counts as failed.
+      timeout: 3s
+      # 5 failures in a row = unhealthy.
+      retries: 5
+
+# Declares the named volume used above.
+volumes:
+  pgdata:
