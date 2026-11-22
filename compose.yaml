@@ -1,7 +1,7 @@
 # OVERVIEW
-# Local development stack for pollbox. For now only Postgres.
-# Later we add redis, the worker, the api and the frontend.
-# The password is read from the .env file (never committed).
+# Local development stack for pollbox: Postgres and Redis.
+# Later we add the worker, the api and the frontend.
+# The database password is read from the .env file (never committed).
 
 # Each entry under "services" is one container.
 services:
@@ -28,6 +28,24 @@ services:
     healthcheck:
       # Exit 0 once Postgres accepts connections for this user and database.
       test: ["CMD-SHELL", "pg_isready -U pollbox -d pollbox"]
+      # Check every 5 seconds.
+      interval: 5s
+      # A check taking longer than this counts as failed.
+      timeout: 3s
+      # 5 failures in a row = unhealthy.
+      retries: 5
+
+  # The queue service; the vote queue lives here.
+  redis:
+    # Official Redis image, pinned to major version 7 (recalled; a newer major may exist).
+    image: redis:7
+    # Publish the port only on the VM's loopback address.
+    ports:
+      - "127.0.0.1:6379:6379"
+    # Redis answers PONG to "ping" when it is ready.
+    healthcheck:
+      # Exit 0 if redis-cli gets a reply.
+      test: ["CMD", "redis-cli", "ping"]
       # Check every 5 seconds.
       interval: 5s
       # A check taking longer than this counts as failed.

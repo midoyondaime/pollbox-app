@@ -15,6 +15,10 @@ from contextlib import asynccontextmanager
 
 # The PostgreSQL driver.
 import psycopg2
+# Redis client, used for the vote queue.
+import redis
+# Standard library: turn a dictionary into JSON text.
+import json
 # FastAPI: the app class, and an exception that turns into an HTTP error.
 from fastapi import FastAPI, HTTPException
 # Pydantic: describes and validates the JSON bodies the API accepts.
@@ -183,3 +187,46 @@ def get_poll(poll_id: int):
         # One dictionary per option.
         "options": [{"id": r[1], "label": r[2], "votes": r[3]} for r in rows],
     }
+
+
+# Open a connection to Redis (a lightweight client object, created per call).
+def get_redis():
+    # REDIS_HOST is the host name of Redis; 6379 is Redis's default port.
+    return redis.Redis(host=os.environ["REDIS_HOST"], port=6379)
+
+
+# Describes the JSON that POST /polls/{id}/vote must receive.
+class VoteIn(BaseModel):
+    # The id of the option the voter chose.
+    option_id: int
+
+
+# Register the function below as the handler for POST /polls/{poll_id}/vote; 202 = "accepted".
+@app.post("/polls/{poll_id}/vote", status_code=202)
+# poll_id comes from the URL, "body" is the validated JSON.
+def vote(poll_id: int, body: VoteIn):
+    # Open a database connection.
+    conn = get_conn()
+    # Always close it at the end.
+    try:
+        # A cursor sends SQL to the database.
+        with conn.cursor() as cur:
+            # Does this option exist AND belong to this poll?
+            cur.execute(
+                "SELECT 1 FROM options WHERE id = %s AND poll_id = %s",
+                # The values of the two %s placeholders, in order.
+                (body.option_id, poll_id),
+            )
+            # One row if it exists, None otherwise.
+            found = cur.fetchone()
+    # Release the connection.
+    finally:
+        conn.close()
+    # Reject a vote for an unknown option before it enters the queue.
+    if not found:
+        # HTTP 404 "not found".
+        raise HTTPException(status_code=404, detail="option not found in this poll")
+    # Put the vote at the left end of the Redis list "votes" (the worker will read it from the other end).
+    get_redis().lpush("votes", json.dumps({"option_id": body.option_id}))
+    # Answer right away: the vote is accepted, not yet counted.
+    return {"status": "accepted"}
