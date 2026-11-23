@@ -26,3 +26,5 @@ build:                                        # job 2: build and push the images
     - docker push "$DOCKERHUB_USERNAME/pollbox-api:gitlab-$CI_COMMIT_SHA"                  # push it
     - docker build -t "$DOCKERHUB_USERNAME/pollbox-worker:gitlab-$CI_COMMIT_SHA" worker   # worker image (new)
     - docker push "$DOCKERHUB_USERNAME/pollbox-worker:gitlab-$CI_COMMIT_SHA"               # push it
+    - docker build -t "$DOCKERHUB_USERNAME/pollbox-frontend:gitlab-$CI_COMMIT_SHA" frontend   # frontend image
+    - docker push "$DOCKERHUB_USERNAME/pollbox-frontend:gitlab-$CI_COMMIT_SHA"                  # push it

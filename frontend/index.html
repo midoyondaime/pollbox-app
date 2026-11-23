@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<!-- index.html - pollbox frontend: one static page, no libraries, no build step.
+     Overview:
+       - two views in one file: "create a poll" and "poll page" (vote + live results)
+       - the view is chosen by the URL hash: "#/poll/12" shows poll 12; no hash shows the creation form
+       - it talks to the API through the relative path /api/..., which nginx forwards to the API
+       - text typed by users is inserted with textContent, never innerHTML (stops script injection)
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>pollbox</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    input, textarea, button { font: inherit; padding: .4rem; }
+    input, textarea { width: 100%; box-sizing: border-box; margin: .3rem 0 .8rem; }
+    .row { display: flex; align-items: center; gap: .6rem; margin: .5rem 0; }
+    .bar { flex: 1; height: 14px; background: #eee; border-radius: 7px; overflow: hidden; }
+    .fill { height: 100%; background: #4a8; }
+    .error { color: #b00; } .info { color: #060; }
+  </style>
+</head>
+<body>
+  <h1>pollbox</h1>
+
+  <!-- view 1: create a poll -->
+  <section id="create">
+    <form id="create-form">
+      <label>Question<input id="q" maxlength="200"></label>
+      <label>Options (one per line, at least 2)<textarea id="opts" rows="4"></textarea></label>
+      <button type="submit">Create poll</button>
+    </form>
+    <p id="create-error" class="error"></p>
+  </section>
+
+  <!-- view 2: one poll, vote and live results -->
+  <section id="poll" hidden>
+    <h2 id="question"></h2>
+    <div id="options"></div>
+    <p id="total"></p>
+    <p id="info" class="info"></p>
+    <p id="error" class="error"></p>
+    <p>Share this poll: <span id="link"></span></p>
+    <p><a href="#">Create another poll</a></p>
+  </section>
+
+  <script>
+    const API = "/api";                      // base path of the API, forwarded by nginx
+    let timer = null;                        // the auto-refresh timer of the poll view
+
+    function $(id) { return document.getElementById(id); }   // short helper to find an element
+
+    // show only one of the two views
+    function show(view) {
+      $("create").hidden = view !== "create";
+      $("poll").hidden = view !== "poll";
+    }
+
+    // call the API; returns the JSON, or throws an Error with the reason
+    async function call(method, path, body) {
+      const res = await fetch(API + path, {
+        method,                                                    // GET or POST
+        headers: body ? { "Content-Type": "application/json" } : {},   // JSON only when there is a body
+        body: body ? JSON.stringify(body) : undefined,             // the request body, if any
+      });
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* no JSON in the answer */ }
+      if (!res.ok) throw new Error(data && data.detail ? JSON.stringify(data.detail) : "HTTP " + res.status);
+      return data;
+    }
+
+    // read the poll and draw it (called every 2 seconds)
+    async function loadPoll(id) {
+      try {
+        const poll = await call("GET", `/polls/${id}`);            // question + options with ids and counts
+        $("question").textContent = poll.question;                 // textContent: safe for user text
+        const total = poll.options.reduce((sum, o) => sum + o.votes, 0);   // all counted votes
+        const box = $("options");
+        box.replaceChildren();                                     // clear the previous drawing
+        for (const o of poll.options) {
+          const row = document.createElement("div"); row.className = "row";
+          const btn = document.createElement("button"); btn.textContent = "Vote";
+          btn.onclick = () => vote(id, o.id);                      // vote for THIS option id
+          const label = document.createElement("span"); label.textContent = `${o.label} (${o.votes})`;
+          const bar = document.createElement("div"); bar.className = "bar";
+          const fill = document.createElement("div"); fill.className = "fill";
+          fill.style.width = total ? (100 * o.votes / total) + "%" : "0%";   // share of all votes
+          bar.appendChild(fill);
+          row.append(btn, label, bar);
+          box.appendChild(row);
+        }
+        $("total").textContent = `${total} vote(s) counted`;
+        $("link").textContent = location.href;                     // the address to share
+        $("error").textContent = "";
+      } catch (e) {
+        $("error").textContent = "Cannot load the poll: " + e.message;
+      }
+    }
+
+    // send a vote: the API answers "accepted"; the worker stores it a moment later
+    async function vote(pollId, optionId) {
+      try {
+        await call("POST", `/polls/${pollId}/vote`, { option_id: optionId });
+        $("info").textContent = "Vote accepted: it will be counted in a moment.";
+      } catch (e) {
+        $("error").textContent = "Vote failed: " + e.message;
+      }
+    }
+
+    // choose the view from the URL hash
+    function route() {
+      clearInterval(timer);                                        // stop refreshing the previous poll
+      const m = location.hash.match(/^#\/poll\/(\d+)$/);           // "#/poll/12" -> m[1] = "12"
+      if (m) {
+        show("poll");
+        loadPoll(m[1]);
+        timer = setInterval(() => loadPoll(m[1]), 2000);           // live results
+      } else {
+        show("create");
+      }
+    }
+
+    // the creation form
+    $("create-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();                                         // no full page reload
+      const question = $("q").value.trim();
+      const options = $("opts").value.split("\n").map(s => s.trim()).filter(Boolean);   // one option per non-empty line
+      if (!question || options.length < 2) {
+        $("create-error").textContent = "A question and at least 2 options (one per line).";
+        return;
+      }
+      try {
+        const poll = await call("POST", "/polls", { question, options });
+        location.hash = "#/poll/" + poll.id;                       // go to the poll page: it reads the option ids
+      } catch (e) {
+        $("create-error").textContent = "Cannot create the poll: " + e.message;
+      }
+    });
+
+    window.addEventListener("hashchange", route);                  // react to navigation
+    route();                                                       // and draw the first view
+  </script>
+</body>
+</html>

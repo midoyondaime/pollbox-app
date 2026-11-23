@@ -34,3 +34,8 @@ jobs:
           context: worker                     # folder with the worker Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-worker:github-${{ github.sha }}   # same SHA, other repository
+      - uses: docker/build-push-action@v6     # frontend image (new step)
+        with:
+          context: frontend                   # folder with the nginx Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-frontend:github-${{ github.sha }}   # same tag style as the others

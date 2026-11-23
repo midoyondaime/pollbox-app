@@ -1,58 +1,60 @@
-# OVERVIEW
-# Local development stack for pollbox: Postgres and Redis.
-# Later we add the worker, the api and the frontend.
-# The database password is read from the .env file (never committed).
-
-# Each entry under "services" is one container.
+# compose.yaml - the whole pollbox stack for LOCAL development (real deployment: Kubernetes, Helm, ArgoCD).
 services:
-  # The database service; "db" is also its hostname for the other containers.
-  db:
-    # Official Postgres image, pinned to major version 16 (same as in the Kubernetes notes).
+  db:                                         # PostgreSQL: the source of truth
     image: postgres:16
-    # Variables read by the image on the FIRST start, when the data folder is empty.
     environment:
-      # The database user to create.
-      POSTGRES_USER: pollbox
-      # The database to create.
-      POSTGRES_DB: pollbox
-      # The password, taken from the .env file next to this file.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    # Publish the port, but only on the VM's loopback address (not reachable from the network).
-    ports:
-      - "127.0.0.1:5432:5432"
-    # Keep the data between restarts.
-    volumes:
-      # Named volume "pgdata" mounted where Postgres stores its files.
-      - pgdata:/var/lib/postgresql/data
-    # Docker asks "is Postgres really ready?" instead of only "is the process up?".
-    healthcheck:
-      # Exit 0 once Postgres accepts connections for this user and database.
+      POSTGRES_USER: pollbox                  # the container creates this user on first start
+      POSTGRES_DB: pollbox                    # and this database
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # read from .env, never written here
+    ports: ["127.0.0.1:5432:5432"]            # published on the VM only
+    volumes: ["pgdata:/var/lib/postgresql/data"]   # data survives container removal
+    healthcheck:                              # lets other services wait until the database is ready
       test: ["CMD-SHELL", "pg_isready -U pollbox -d pollbox"]
-      # Check every 5 seconds.
       interval: 5s
-      # A check taking longer than this counts as failed.
       timeout: 3s
-      # 5 failures in a row = unhealthy.
-      retries: 5
-
-  # The queue service; the vote queue lives here.
-  redis:
-    # Official Redis image, pinned to major version 7 (recalled; a newer major may exist).
+      retries: 10
+  redis:                                      # the vote queue
     image: redis:7
-    # Publish the port only on the VM's loopback address.
-    ports:
-      - "127.0.0.1:6379:6379"
-    # Redis answers PONG to "ping" when it is ready.
+    ports: ["127.0.0.1:6379:6379"]            # published on the VM only
     healthcheck:
-      # Exit 0 if redis-cli gets a reply.
       test: ["CMD", "redis-cli", "ping"]
-      # Check every 5 seconds.
       interval: 5s
-      # A check taking longer than this counts as failed.
       timeout: 3s
-      # 5 failures in a row = unhealthy.
-      retries: 5
-
-# Declares the named volume used above.
+      retries: 10
+  api:                                        # FastAPI
+    build: ./api                              # built from api/Dockerfile
+    environment:                              # services reach each other by NAME on the Compose network
+      DB_HOST: db
+      POSTGRES_DB: pollbox
+      POSTGRES_USER: pollbox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+    ports: ["127.0.0.1:8000:8000"]            # for curl from the VM; the frontend does not need it
+    depends_on:                               # start only when db and redis are healthy
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:                              # the python image has no curl, so use python itself
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+  worker:                                     # takes votes from Redis, stores them in Postgres
+    build: ./worker                           # no ports: nobody calls the worker
+    environment:
+      DB_HOST: db
+      POSTGRES_DB: pollbox
+      POSTGRES_USER: pollbox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped                   # come back after a crash
+  frontend:                                   # nginx: the page, and /api/ forwarded to the API
+    build: ./frontend
+    ports: ["8080:80"]                        # on all VM interfaces, so your host browser can reach it
+    depends_on:
+      api: {condition: service_healthy}       # nginx resolves the name "api" at startup, so wait for it
 volumes:
-  pgdata:
+  pgdata:                                     # the named volume holding the database files
