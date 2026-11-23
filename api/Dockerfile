@@ -15,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Now copy the application code AND the schema file it reads at startup.
-COPY main.py  ./
+COPY main.py schema.sql ./
 
 # Document that the app listens on port 8000 (it does not publish it by itself).
 EXPOSE 8000
