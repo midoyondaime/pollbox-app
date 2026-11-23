@@ -21,6 +21,8 @@ import redis
 import json
 # FastAPI: the app class, and an exception that turns into an HTTP error.
 from fastapi import FastAPI, HTTPException
+from fastapi import Query                       # add next to the other fastapi import
+
 # Pydantic: describes and validates the JSON bodies the API accepts.
 from pydantic import BaseModel
 
@@ -146,6 +148,21 @@ def create_poll(poll: PollIn):
     return {"id": poll_id, "question": poll.question, "options": poll.options}
 
 
+@app.get("/polls")
+def list_polls(limit: int = Query(10, ge=1, le=100), offset: int = Query(0, ge=0)):
+    # limit: how many polls (1 to 100, default 10). offset: how many to skip (default 0).
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, question FROM polls ORDER BY id DESC LIMIT %s OFFSET %s", (limit, offset))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return [{"id": r[0], "question": r[1]} for r in rows]
+
+
+
+    
 # Register the function below as the handler for GET /polls/{poll_id}.
 @app.get("/polls/{poll_id}")
 # poll_id comes from the URL; FastAPI converts it to an integer (HTTP 422 if it isn't one).
