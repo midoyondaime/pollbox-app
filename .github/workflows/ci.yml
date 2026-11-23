@@ -13,9 +13,26 @@ jobs:
         with:
           python-version: "3.12"              # same version as the images
       - run: pip install -r api/requirements.txt   # install the dependencies
-      - run: pytest -q                        # run the tests
+      - run: pytest -q   
+  smoke:
+    needs: test                          # only start the stack if the tests passed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # a throwaway password made for this run only: not a secret, never stored
+      - run: echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > .env
+      # build the images, start the five services, wait until running/healthy
+      - run: docker compose up -d --build --wait --wait-timeout 120
+      # walk the vote journey through nginx
+      - run: ./scripts/smoke.sh
+      # if something failed, show what the containers said
+      - if: failure()
+        run: docker compose logs --tail=50
+      # always clean up
+      - if: always()
+        run: docker compose down -v                     # run the tests
   build-push:                                 # job 2: build and push the images
-    needs: test                               # the gate: only runs if test succeeded
+    needs: smoke                               # the gate: only runs if test succeeded
     if: github.event_name == 'push'           # never on pull requests: PRs must not publish images
     runs-on: ubuntu-latest
     steps:
