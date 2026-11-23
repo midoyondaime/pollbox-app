@@ -1,68 +1,36 @@
-# OVERVIEW
-# CI pipeline for pollbox-app.
-# For now it has one job: install the API dependencies and run the tests.
-# Later we add jobs that build and push the Docker images.
-
-# The name shown in the GitHub "Actions" tab.
-name: CI
-
-# Events that start this workflow.
-on:
-  # Run on every push...
+# ci.yml - CI for pollbox: test on every push and PR, build and push the images on push to main.
+name: CI                                      # name shown in the Actions tab
+on:                                           # the events that start the workflow
   push:
-    # ...but only to the main branch.
-    branches: [main]
-  # Also run on every pull request (so a PR shows green or red before merging).
-  pull_request:
-
-# The list of jobs in this workflow.
+    branches: [main]                          # every push to main
+  pull_request:                               # and every pull request
 jobs:
-  # A job named "test".
-  test:
-    # Run it on a fresh GitHub-hosted Ubuntu machine.
-    runs-on: ubuntu-latest
-    # The ordered steps of the job.
+  test:                                       # job 1: run the tests
+    runs-on: ubuntu-latest                    # a GitHub-hosted runner
     steps:
-      # Step 1: download the repo's code onto the runner (it starts empty).
-      - uses: actions/checkout@v6
-      # Step 2: install Python on the runner.
-      - uses: actions/setup-python@v6
-        # Settings passed to this action.
+      - uses: actions/checkout@v6             # get the code
+      - uses: actions/setup-python@v6         # install Python
         with:
-          # Same Python as in your VM (Ubuntu 24.04 ships 3.12; recalled, not checked).
-          python-version: "3.12"
-      # Step 3: install the same dependencies as locally.
-      - run: pip install -r api/requirements.txt
-      # Step 4: run the tests; a failing test makes the job (and the pipeline) red.
-      - run: pytest -q
-
-  # A second job that builds the Docker image and pushes it to Docker Hub.
-  build-push:
-    # Wait for the "test" job; if it fails, this job does not run.
-    needs: test
-    # Only publish images for pushes to main, never for pull requests.
-    if: github.event_name == 'push'
-    # Fresh GitHub-hosted Ubuntu machine, same as the test job.
+          python-version: "3.12"              # same version as the images
+      - run: pip install -r api/requirements.txt   # install the dependencies
+      - run: pytest -q                        # run the tests
+  build-push:                                 # job 2: build and push the images
+    needs: test                               # the gate: only runs if test succeeded
+    if: github.event_name == 'push'           # never on pull requests: PRs must not publish images
     runs-on: ubuntu-latest
-    # Ordered steps of this job.
     steps:
-      # Download the repo's code onto this runner.
-      - uses: actions/checkout@v6
-      # Log in to Docker Hub with the token stored in GitHub secrets.
-      - uses: docker/login-action@v4
-        # Settings passed to the login action.
+      - uses: actions/checkout@v6             # get the code
+      - uses: docker/login-action@v4          # log in to Docker Hub
         with:
-          # Your Docker Hub username, read from the repo secrets.
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          # The access token (never your password), read from the repo secrets.
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      # Build the image from api/ and push it.
-      - uses: docker/build-push-action@v6
-        # Settings passed to the build action.
+          username: ${{ secrets.DOCKERHUB_USERNAME }}   # stored as a repository secret
+          password: ${{ secrets.DOCKERHUB_TOKEN }}      # stored as a repository secret
+      - uses: docker/build-push-action@v6     # API image
         with:
-          # Build context: the folder that contains the Dockerfile.
-          context: api
-          # Push the image to the registry after building it.
+          context: api                        # folder with the API Dockerfile
+          push: true                          # push after building
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-api:${{ github.sha }}      # tag = commit SHA
+      - uses: docker/build-push-action@v6     # worker image (the new step)
+        with:
+          context: worker                     # folder with the worker Dockerfile
           push: true
-          # Image name and tag: <user>/pollbox-api:<full commit SHA>.
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-api:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-worker:${{ github.sha }}   # same SHA, other repository
