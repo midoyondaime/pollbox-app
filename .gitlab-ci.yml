@@ -1,7 +1,5 @@
 # .gitlab-ci.yml - GitLab CI for pollbox: test, then build and push the images (tags prefixed "gitlab-").
-stages:                                       # the order in which stages run
-  - test
-  - build
+stages: [test, smoke, build]                                   # the order in which stages run
 test:                                         # job 1: run the tests
   stage: test
   image: python:3.12-slim                     # the container the job runs in
@@ -28,3 +26,25 @@ build:                                        # job 2: build and push the images
     - docker push "$DOCKERHUB_USERNAME/pollbox-worker:gitlab-$CI_COMMIT_SHA"               # push it
     - docker build -t "$DOCKERHUB_USERNAME/pollbox-frontend:gitlab-$CI_COMMIT_SHA" frontend   # frontend image
     - docker push "$DOCKERHUB_USERNAME/pollbox-frontend:gitlab-$CI_COMMIT_SHA"                  # push it
+
+smoke:
+  stage: smoke                       # runs after test, before build: a red smoke blocks the push
+  image: docker:latest
+  services:
+    - docker:dind
+  tags: [vm-docker]                  # your self-hosted runner
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    BASE: "http://docker:8080/api"   # the published port is on the dind container, not on localhost
+  script:
+    # the alpine docker image lacks what smoke.sh needs
+    - apk add --no-cache bash curl python3 openssl
+    # throwaway password for this run only: not a secret, never stored
+    - echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > .env
+    - docker compose up -d --build --wait --wait-timeout 120
+    - ./scripts/smoke.sh
+  after_script:
+    # runs even if the script failed: show the containers' last words, then clean up
+    - docker compose logs --tail=50 || true
+    - docker compose down -v || true
