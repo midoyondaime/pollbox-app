@@ -28,9 +28,9 @@ jobs:
         with:
           context: api                        # folder with the API Dockerfile
           push: true                          # push after building
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-api:${{ github.sha }}      # tag = commit SHA
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-api:github-${{ github.sha }}      # tag = commit SHA
       - uses: docker/build-push-action@v6     # worker image (the new step)
         with:
           context: worker                     # folder with the worker Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-worker:${{ github.sha }}   # same SHA, other repository
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pollbox-worker:github-${{ github.sha }}   # same SHA, other repository
