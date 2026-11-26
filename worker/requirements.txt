@@ -1,2 +1,2 @@
 psycopg2-binary
-redis
+redis==8.2.0

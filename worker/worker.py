@@ -36,8 +36,8 @@ def get_conn():
 # The worker's main loop.
 def main():
     # Connect to Redis (6379 is its default port).
-    r = redis.Redis(host=os.environ["REDIS_HOST"], port=6379)
-    # flush=True makes the line appear in the container logs immediately.
+    # r = redis.Redis(host=os.environ["REDIS_HOST"], port=6379)
+    r = redis.Redis(host=os.environ["REDIS_HOST"], port=6379, socket_timeout=15)    # flush=True makes the line appear in the container logs immediately.
     print("worker started, waiting for votes", flush=True)
     # Run forever.
     while True:
